@@ -44,7 +44,8 @@
     ```
   - configure that selfsigned issuer to be trusted internally to the cluster
     - get the `tls.crt` key from the `cert-manager-ca` secret in the `cert-manager` namespace
-    - create a configmap in `openshift-config` named `user-ca-bundle` with a key named `ca-bundle.crt` with the contents of the above
+    - create a configmap in `openshift-config` named `user-ca-bundle` with a key named `ca-bundle.crt` with the contents
+      of the above
     - update the `Proxy` object named `cluster` with `spec.trustedCA.name=user-ca-bundle`
 - Leader Worker Set
   - and operand, default is fine
@@ -117,115 +118,117 @@
         storageClass: gp3-csi
     ```
 - enable user-workload-monitoring
-    ```
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: cluster-monitoring-config
-      namespace: openshift-monitoring
-    data:
-      config.yaml: |
-        enableUserWorkload: true
-    ```
-  - there's more we could do, such as enabling persistence for cluster monitoring or user workload monitoring. we're skipping these for brevity and simplicity.
+  ```
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: cluster-monitoring-config
+    namespace: openshift-monitoring
+  data:
+    config.yaml: |
+      enableUserWorkload: true
+  ```
+  - there's more we could do, such as enabling persistence for cluster monitoring or user workload monitoring. we're
+    skipping these for brevity and simplicity.
 - create the maas-default-gateway
-    ```
-    apiVersion: gateway.networking.k8s.io/v1
-    kind: GatewayClass
-    metadata:
-      name: openshift-default
-    spec:
-      controllerName: "openshift.io/gateway-controller/v1"
-    ---
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: maas-default-gateway-config
-      namespace: openshift-ingress
-    data:
-      deployment: |
-        spec:
-          template:
-            spec:
-              containers:
-              - name: istio-proxy
-                resources:
-                    limits:
-                      cpu: "2"
-                      memory: 2Gi
-                    requests:
-                      cpu: 100m
-                      memory: 256Mi
-    ---
-    apiVersion: gateway.networking.k8s.io/v1
-    kind: Gateway
-    metadata:
-        opendatahub.io/managed: 'false'
-        security.opendatahub.io/authorino-tls-bootstrap: 'true'
-      labels:
-        opendatahub.io/managed: 'false'
-      name: maas-default-gateway
-      namespace: openshift-ingress
-    spec:
-      gatewayClassName: data-science-gateway-class
-      infrastructure:
-        parametersRef:
-          group: ''
-          kind: ConfigMap
-          name: maas-default-gateway-config
-      listeners:
-        - allowedRoutes:
-            namespaces:
-              from: All
-          hostname: maas.apps.<INSERT YOUR CLUSTER ROUTE HERE> # Make sure you use the router route. this is not a hard requirement, this is to simplify loadbalancer and tls config
-          name: https
-          port: 443
-          protocol: HTTPS
-          tls:
-            certificateRefs:
-              - group: ''
-                kind: Secret
-                name: cert-manager-ingress-cert # this is the default for RHDP-provisioned cert-manager wildcard cert
-            mode: Terminate
-    ```
+  ```
+  apiVersion: gateway.networking.k8s.io/v1
+  kind: GatewayClass
+  metadata:
+    name: openshift-default
+  spec:
+    controllerName: "openshift.io/gateway-controller/v1"
+  ---
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: maas-default-gateway-config
+    namespace: openshift-ingress
+  data:
+    deployment: |
+      spec:
+        template:
+          spec:
+            containers:
+            - name: istio-proxy
+              resources:
+                  limits:
+                    cpu: "2"
+                    memory: 2Gi
+                  requests:
+                    cpu: 100m
+                    memory: 256Mi
+  ---
+  apiVersion: gateway.networking.k8s.io/v1
+  kind: Gateway
+  metadata:
+    annotations:
+      opendatahub.io/managed: 'false'
+      security.opendatahub.io/authorino-tls-bootstrap: 'true'
+    labels:
+      opendatahub.io/managed: 'false'
+    name: maas-default-gateway
+    namespace: openshift-ingress
+  spec:
+    gatewayClassName: data-science-gateway-class
+    infrastructure:
+      parametersRef:
+        group: ''
+        kind: ConfigMap
+        name: maas-default-gateway-config
+    listeners:
+      - allowedRoutes:
+          namespaces:
+            from: All
+        hostname: maas.apps.<INSERT YOUR CLUSTER ROUTE HERE> # Make sure you use the router route. this is not a hard requirement, this is to simplify loadbalancer and tls config
+        name: https
+        port: 443
+        protocol: HTTPS
+        tls:
+          certificateRefs:
+            - group: ''
+              kind: Secret
+              name: cert-manager-ingress-cert # this is the default for RHDP-provisioned cert-manager wildcard cert
+          mode: Terminate
+  ```
 - Red Hat Connectivity Link
   - Pin to 1.3.4
   - install into kuadrant-system namespace
   - create Kuadrant
-      ```
-      apiVersion: kuadrant.io/v1beta1
-      kind: Kuadrant
-      metadata:
-        name: kuadrant
-        namespace: kuadrant-system
-      spec:
-        observability:
-          enable: true
-      ```
-  -  modify Authorino service to use a service-serving certificate
-      ```
-      kind: Service
-      apiVersion: v1
-      metadata:
-        name: authorino-authorino-authorization
-        namespace: kuadrant-system
-        annotations:
-          service.beta.openshift.io/serving-cert-secret-name: authorino-server-cert
-      ```
+    ```
+    apiVersion: kuadrant.io/v1beta1
+    kind: Kuadrant
+    metadata:
+      name: kuadrant
+      namespace: kuadrant-system
+    spec:
+      observability:
+        enable: true
+    ```
+  - modify Authorino service to use a service-serving certificate
+    ```
+    kind: Service
+    apiVersion: v1
+    metadata:
+      name: authorino-authorino-authorization
+      namespace: kuadrant-system
+      annotations:
+        service.beta.openshift.io/serving-cert-secret-name: authorino-server-cert
+    ```
   - modify Authorino object to use the certificate
-      ```
-      apiVersion: operator.authorino.kuadrant.io/v1beta1
-      kind: Authorino
-      metadata:
-        name: authorino
-        namespace: kuadrant-system
-      spec:
-        listener:
-          tls:
-            certSecretRef:
-              name: authorino-server-cert
-            enabled: true
-      ```
+    ```
+    apiVersion: operator.authorino.kuadrant.io/v1beta1
+    kind: Authorino
+    metadata:
+      name: authorino
+      namespace: kuadrant-system
+    spec:
+      listener:
+        tls:
+          certSecretRef:
+            name: authorino-server-cert
+          enabled: true
+    ```
 
 # Install RHOAI
 
@@ -266,7 +269,8 @@
             size: 5Gi
         namespace: redhat-ods-monitoring
     ```
-  - recover the CNPG-generated connection URI for the MaaS DB from the `uri` key of the `openshift-ai-maas-app` secret in the `maas-db` namespace
+  - recover the CNPG-generated connection URI for the MaaS DB from the `uri` key of the `openshift-ai-maas-app` secret
+    in the `maas-db` namespace
   - create the secret for the MaaS db
     ```
     apiVersion: v1
