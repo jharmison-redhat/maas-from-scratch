@@ -170,7 +170,7 @@
     name: maas-default-gateway
     namespace: openshift-ingress
   spec:
-    gatewayClassName: data-science-gateway-class
+    gatewayClassName: openshift-default
     infrastructure:
       parametersRef:
         group: ''
