@@ -49,11 +49,16 @@
     - update the `Proxy` object named `cluster` with `spec.trustedCA.name=user-ca-bundle`
 - Leader Worker Set
   - and operand, default is fine
+  - follow-up note: this is optional, and everything will work without it, but the DSC reflect non-Ready status for some
+    components and you may struggle getting GitOps to work without it, unless you write custom readiness checks for this
+    resource
 - Cluster Observability Operator
   - pin to 1.4.0
 - Red Hat build of OpenTelemetry
 - CNPG
   - not required, easier for self-hosted Postgres
+  - will really be an issue if your PoC makes it to production - migrating the database is hard, start with something
+    solid
   - create a CNPG Cluster
     ```
     apiVersion: v1
@@ -192,8 +197,9 @@
           mode: Terminate
   ```
 - Red Hat Connectivity Link
-  - Pin to 1.3.4
-  - install into kuadrant-system namespace
+  - pin to 1.3.4
+  - install _the operator_ into `kuadrant-system` namespace - not the default of `openshift-operators`.
+    - the reason for this is complicated and can be explained best live
   - create Kuadrant
     ```
     apiVersion: kuadrant.io/v1beta1
@@ -233,7 +239,7 @@
 # Install RHOAI
 
 - OpenShift AI
-  - create the DSC when prompted, only need a few things explicitly
+  - create the DSC when prompted, only need a few things explicitly, feel free to disable others
     ```
     apiVersion: datasciencecluster.opendatahub.io/v2
     kind: DataScienceCluster
@@ -296,9 +302,31 @@
         modelAsService: true
         observabilityDashboard: true
     ```
+  - create a HarwareProfile to include your GPU resource, and add a toleration with operator `Exists` and key
+    `nvidia.com/gpu`.
+    - Tune the minimum/maximums as desired, but keep in mind your node has 8 vCPU, 64 GiB of RAM, and only one GPU.
 
 # Use it
 
-- deploy a model (nemotron-3-nano-30b-a3b is already downloaded onto your nodes)
+- deploy a model (nemotron-3-nano-30b-a3b is already downloaded onto your nodes, if you search for it in the catalog)
+  - ensure you select llm-d as the runtime, not the automatic default of vLLM
+  - if you'd like to provide arguments to make sure tool calling works, token rate limits are definitely enforced
+    regardless of the client preference, and to make sure the reasoning tokens are parsed well, you can use this set of
+    arguments known to work with this model, this runtime, and this accelerator:
+    ```
+    --max-model-len=131072
+    --enable-auto-tool-choice
+    --tool-call-parser=qwen3_coder
+    --trust-remote-code
+    --enable-force-include-usage
+    --reasoning-parser-plugin=/mnt/models/nano_v3_reasoning_parser.py
+    --reasoning-parser=nano_v3
+    ```
 - configure a subscription
+  - probably easiest to manually type in the group `system:authenticated:oauth` to ensure anyone logged into the cluster
+    can mint a key
+  - I've generally been using 20,000 T/min as the limits, feel free to set them lower if you want to see how various
+    clients handle the 429
+  - Ensure you leave the checkbox checked to pre-populate the Authorization Policy, keeping our Subscription and
+    AuthPolicy closely coupled but easier to understand.
 - log in as your non-admin user and use it :)
